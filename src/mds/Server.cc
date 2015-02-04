@@ -3924,7 +3924,8 @@ void Server::handle_set_vxattr(MDRequestRef& mdr, CInode *cur,
 	respond_to_request(mdr, -EINVAL);
 	return;
       }
-      ceph_file_layout layout = cur->get_projected_inode()->layout;
+      pi = cur->get_projected_inode();
+      ceph_file_layout layout = pi->layout;
       rest = name.substr(name.find("layout"));
       const OSDMap *osdmap = mds->objecter->get_osdmap_read();
       int r = parse_layout_vxattr(rest, value, osdmap, &layout);
@@ -3949,6 +3950,12 @@ void Server::handle_set_vxattr(MDRequestRef& mdr, CInode *cur,
       xlocks.insert(&cur->filelock);
       if (!mds->locker->acquire_locks(mdr, rdlocks, wrlocks, xlocks))
 	return;
+
+      // disallow changing layout of file that has ever have data.
+      if (pi->size > 0 || pi->max_size_ever > 0) {
+	respond_to_request(mdr, -EINVAL);
+	return;
+      }
 
       pi = cur->project_inode();
       int64_t old_pool = pi->layout.fl_pg_pool;
